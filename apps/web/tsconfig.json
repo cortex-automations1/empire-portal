@@ -2,11 +2,26 @@
   "extends": "@empire/typescript-config/nextjs.json",
   "compilerOptions": {
     "paths": {
-      "@/*": ["./*"],
-      "@empire/shared": ["../../packages/shared/src"],
-      "@empire/database": ["../../packages/database/src"]
-    }
+      "@/*": [
+        "./*"
+      ],
+      "@empire/shared": [
+        "../../packages/shared/src"
+      ],
+      "@empire/database": [
+        "../../packages/database/src"
+      ]
+    },
+    "allowJs": true,
+    "noEmit": true
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
