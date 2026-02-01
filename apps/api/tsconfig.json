@@ -1,0 +1,11 @@
+{
+  "extends": "@empire/typescript-config/node.json",
+  "compilerOptions": {
+    "paths": {
+      "@empire/shared": ["../../packages/shared/src"],
+      "@empire/database": ["../../packages/database/src"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

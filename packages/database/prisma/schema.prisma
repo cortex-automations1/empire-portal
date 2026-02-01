@@ -1,0 +1,211 @@
+// Empire Portal - Database Schema
+// Aligned with MASTER_PLAN.md and FINANCIAL_FLOWS.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Financial Entities (KBG, KFG, MYTE, Cortex, Vizion, Thryve, Summit)
+model Entity {
+  id          String   @id @default(uuid())
+  name        String   @unique // 'KBG', 'KFG', 'MYTE', etc.
+  legalName   String // 'Keystone Business Group LLC'
+  type        String // 'parent', 'investment', 'operating'
+  industry    String?
+  status      String   @default("active") // 'active', 'building', 'planned'
+  mercuryKey  String?  @unique // Reference to API key (env var name)
+
+  // Relationships
+  accounts    Account[]
+  metrics     BusinessMetric[]
+  goals       Goal[]
+  flowsFrom   CapitalFlow[]    @relation("FromEntity")
+  flowsTo     CapitalFlow[]    @relation("ToEntity")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([status])
+}
+
+// Mercury Bank Accounts
+model Account {
+  id               String  @id @default(uuid())
+  entity           Entity  @relation(fields: [entityId], references: [id])
+  entityId         String
+  mercuryAccountId String  @unique // Mercury's account ID
+  accountName      String // "Mercury Checking 9742"
+  accountType      String // "checking", "savings"
+  nickname         String? // Custom label
+  routingNumber    String
+  accountNumber    String
+  status           String  @default("active") // "active", "closed"
+
+  // Relationships
+  balances     Balance[]
+  transactions Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([entityId])
+  @@index([status])
+}
+
+// Time-series balance snapshots
+model Balance {
+  id        String   @id @default(uuid())
+  account   Account  @relation(fields: [accountId], references: [id])
+  accountId String
+  balance   Decimal  @db.Decimal(12, 2)
+  available Decimal? @db.Decimal(12, 2) // Available vs total
+  currency  String   @default("USD")
+  date      DateTime @db.Date // Date of snapshot
+  timestamp DateTime @default(now()) // When recorded
+
+  @@unique([accountId, date])
+  @@index([accountId, date])
+}
+
+// Transactions from Mercury
+model Transaction {
+  id                   String   @id @default(uuid())
+  account              Account  @relation(fields: [accountId], references: [id])
+  accountId            String
+  mercuryTransactionId String?  @unique
+  date                 DateTime @db.Date
+  description          String
+  amount               Decimal  @db.Decimal(12, 2)
+  status               String // "pending", "posted", "failed"
+
+  // Optional metadata
+  category      String?
+  counterparty  String?
+  counterpartyId String?
+  note          String?
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId, date])
+  @@index([date])
+}
+
+// Business Metrics (monthly reports)
+model BusinessMetric {
+  id           String  @id @default(uuid())
+  entity       Entity  @relation(fields: [entityId], references: [id])
+  entityId     String
+  month        DateTime @db.Date // First day of month
+  
+  // P&L
+  revenue      Decimal  @db.Decimal(12, 2)
+  expenses     Decimal  @db.Decimal(12, 2)
+  netProfit    Decimal  @db.Decimal(12, 2)
+  profitMargin Decimal  @db.Decimal(5, 2) // Percentage
+
+  // Profit Distribution (per FINANCIAL_FLOWS.md)
+  toBusiness Decimal @db.Decimal(12, 2) // Reinvest in business
+  toKFG      Decimal @db.Decimal(12, 2) // Investments
+  toKBG      Decimal @db.Decimal(12, 2) // Family/trust
+  toReserve  Decimal @db.Decimal(12, 2) // Operating reserve
+  toOwner    Decimal @db.Decimal(12, 2) // Owner draw
+
+  // Optional KPIs
+  clientCount Int?
+  mrr         Decimal? @db.Decimal(12, 2) // Monthly recurring revenue
+
+  notes     String?
+  createdBy String? // User ID
+  createdAt DateTime @default(now())
+
+  @@unique([entityId, month])
+  @@index([month])
+}
+
+// Strategic Goals (5-year roadmap)
+model Goal {
+  id           String   @id @default(uuid())
+  entity       Entity?  @relation(fields: [entityId], references: [id])
+  entityId     String? // null = empire-wide goal
+  name         String
+  description  String?
+  targetValue  Decimal  @db.Decimal(12, 2)
+  currentValue Decimal  @db.Decimal(12, 2) @default(0)
+  unit         String // "dollars", "clients", "percent"
+  period       String // "monthly", "quarterly", "yearly"
+  startDate    DateTime @db.Date
+  endDate      DateTime @db.Date
+  status       String   @default("active") // "active", "completed", "abandoned"
+  phase        String? // "Phase 1: Optimize", etc.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([entityId])
+  @@index([status])
+  @@index([endDate])
+}
+
+// Alerts & Notifications
+model Alert {
+  id         String    @id @default(uuid())
+  entityId   String? // Related entity (optional)
+  alertType  String // "payment_due", "goal_behind", "balance_low", etc.
+  severity   String // "info", "warning", "critical"
+  message    String
+  metadata   Json? // Additional context
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime?
+  resolvedBy String? // User ID
+
+  createdAt DateTime @default(now())
+
+  @@index([resolved, severity])
+  @@index([createdAt])
+}
+
+// Capital Flows (transfers per FINANCIAL_FLOWS.md)
+model CapitalFlow {
+  id           String   @id @default(uuid())
+  fromEntity   Entity   @relation("FromEntity", fields: [fromEntityId], references: [id])
+  fromEntityId String
+  toEntity     Entity   @relation("ToEntity", fields: [toEntityId], references: [id])
+  toEntityId   String
+  amount       Decimal  @db.Decimal(12, 2)
+  flowType     String // "profit_distribution", "investment_return", "owner_draw"
+  month        DateTime @db.Date // Which month's profits
+  status       String   @default("pending") // "pending", "transferred", "verified"
+  transferDate DateTime?
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([month])
+  @@index([status])
+}
+
+// Audit Log (who did what when)
+model AuditLog {
+  id         String  @id @default(uuid())
+  userId     String // Clerk user ID
+  userName   String // For display
+  action     String // "view", "create", "update", "delete", "transfer"
+  resource   String // "entity", "transaction", "goal", "report"
+  resourceId String? // ID of resource
+  details    Json? // Action-specific metadata
+  ipAddress  String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action, resource])
+}
